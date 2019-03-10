@@ -1,0 +1,44 @@
+#!/usr/bin/make -f
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+export DH_GOPKG := github.com/opencontainers/runc
+export DH_GOLANG_INSTALL_EXTRA := libcontainer/seccomp/fixtures
+
+include /usr/share/dpkg/pkg-info.mk
+
+TAGS=apparmor seccomp selinux ambient
+LDFLAGS := -X main.version=$(DEB_VERSION_UPSTREAM) -X main.gitCommit=$(DEB_VERSION)
+
+%:
+	dh $@ --buildsystem=golang --with=golang --builddirectory=_build
+
+override_dh_clean:
+	dh_clean
+	## Remove Files-Excluded (when built from checkout or non-DFSG tarball):
+	$(RM) -rv `perl -0nE 'say $$1 if m{^Files\-Excluded\:\s*(.*?)(?:\n\n|Files:|Comment:)}sm;' debian/copyright`
+
+override_dh_auto_configure:
+	$(MAKE) -C libcontainer/criurpc
+	cd man && ./md2man-all.sh
+	dh_auto_configure
+#	## Sub-vendor "github.com/docker/docker/pkg" (system lib takes preference over bundled one):
+#	mkdir -p _build/src/$(DH_GOPKG)/vendor/github.com/docker/docker
+#	if [   -d "/usr/share/gocode/src/github.com/docker/docker/pkg" ]; then \
+#            cp -vr /usr/share/gocode/src/github.com/docker/docker/pkg  _build/src/$(DH_GOPKG)/vendor/github.com/docker/docker/ ;\
+#        elif [ -d "vendor/github.com/docker/docker/pkg" ]; then \
+#            cp -vr vendor/github.com/docker/docker/pkg  _build/src/$(DH_GOPKG)/vendor/github.com/docker/docker/ ;\
+#        fi
+	## Remove extra license files:
+	$(RM) -v \
+            _build/src/$(DH_GOPKG)/vendor/github.com/docker/docker/*/*/LICENSE* \
+        ;
+#	ln -svrf vendor/github.com/opencontainers/specs  _build/src/github.com/opencontainers/
+
+override_dh_auto_build:
+	dh_auto_build -- -tags "$(TAGS)" -ldflags "$(LDFLAGS)"
+
+override_dh_auto_test:
+	DH_GOLANG_EXCLUDES="libcontainer/integration" \
+        dh_auto_test -- -tags "$(TAGS)"
